@@ -13,7 +13,8 @@ import {
   Sparkles,
   ChevronDown,
   ChevronUp,
-  Table
+  Table,
+  Filter
 } from 'lucide-react';
 import { 
   AreaChart, 
@@ -48,6 +49,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
   const [filterStatus, setFilterStatus] = useState<'active' | 'all'>('active');
   const [chartMode, setChartMode] = useState<'grouped' | 'stacked'>('grouped');
   const [showTableDetails, setShowTableDetails] = useState<boolean>(true);
+  const [hideEmptyClasses, setHideEmptyClasses] = useState<boolean>(true);
 
   const handleGoBack = () => {
     if (onBack) {
@@ -126,6 +128,18 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
     });
   }, [filteredStudents, schoolProfile.daftarKelas]);
 
+  // Sembunyikan rombel yang tidak ada siswanya atau 0
+  const displayedGradeData = useMemo(() => {
+    if (hideEmptyClasses) {
+      return gradeDistributionData.filter((d) => d.total > 0);
+    }
+    return gradeDistributionData;
+  }, [gradeDistributionData, hideEmptyClasses]);
+
+  const emptyClassesCount = useMemo(() => {
+    return gradeDistributionData.filter((d) => d.total === 0).length;
+  }, [gradeDistributionData]);
+
   // Overall Gender Totals in scope
   const totalInScope = filteredStudents.length;
   const totalMale = useMemo(() => {
@@ -147,9 +161,9 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
 
   // Class with maximum students
   const highestClass = useMemo(() => {
-    if (gradeDistributionData.length === 0) return null;
-    return [...gradeDistributionData].sort((a, b) => b.total - a.total)[0];
-  }, [gradeDistributionData]);
+    if (displayedGradeData.length === 0) return null;
+    return [...displayedGradeData].sort((a, b) => b.total - a.total)[0];
+  }, [displayedGradeData]);
 
   // 7-day traffic trend data
   const trafficData = [
@@ -317,6 +331,26 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                 <span>Bertumpuk</span>
               </button>
             </div>
+
+            {/* Toggle Sembunyikan Rombel Kosong */}
+            <button
+              type="button"
+              onClick={() => setHideEmptyClasses(prev => !prev)}
+              className={cn(
+                "px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition-all text-xs border cursor-pointer",
+                hideEmptyClasses
+                  ? "bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-950/60 dark:text-amber-200 dark:border-amber-800"
+                  : "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700 hover:bg-slate-200"
+              )}
+              title={hideEmptyClasses ? "Tampilkan semua rombel termasuk yang 0 siswa" : "Sembunyikan rombel yang tidak ada siswanya atau 0"}
+            >
+              <Filter className="w-3.5 h-3.5" />
+              <span>
+                {hideEmptyClasses
+                  ? `Sembunyikan Kosong / 0 (${emptyClassesCount})`
+                  : 'Tampilkan Semua Rombel'}
+              </span>
+            </button>
           </div>
         </div>
 
@@ -396,21 +430,23 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
 
         {/* RECHARTS BAR CHART */}
         <div className="pt-2">
-          {gradeDistributionData.length === 0 ? (
+          {displayedGradeData.length === 0 ? (
             <div className="h-64 flex flex-col items-center justify-center text-center p-6 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700">
               <Users className="w-10 h-10 text-slate-400 mb-2" />
               <p className="font-bold text-slate-700 dark:text-slate-300 text-sm">
                 Belum ada data siswa untuk divisualisasikan
               </p>
               <p className="text-xs text-slate-500 mt-1 max-w-sm">
-                Tambahkan peserta didik melalui menu Pendataan Siswa untuk melihat visualisasi distribusi kelas.
+                {emptyClassesCount > 0 && hideEmptyClasses
+                  ? `${emptyClassesCount} rombel dengan 0 siswa disembunyikan. Klik "Tampilkan Semua Rombel" untuk melihat rombel kosong.`
+                  : 'Tambahkan peserta didik melalui menu Pendataan Siswa untuk melihat visualisasi distribusi kelas.'}
               </p>
             </div>
           ) : (
             <div className="w-full h-80 md:h-96">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
-                  data={gradeDistributionData}
+                  data={displayedGradeData}
                   margin={{ top: 20, right: 15, left: -15, bottom: 25 }}
                   barGap={chartMode === 'grouped' ? 6 : 0}
                 >
@@ -473,7 +509,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
               <Table className="w-4 h-4 text-[#003399] dark:text-blue-400" />
               <span>Rincian Rekapitulasi Matriks per Tingkat Kelas</span>
               <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-[10px] text-slate-500 font-semibold">
-                {gradeDistributionData.length} Rombel
+                {displayedGradeData.length} Rombel
               </span>
             </div>
             <div className="flex items-center gap-1 text-slate-500 text-[11px]">
@@ -495,7 +531,19 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-                  {gradeDistributionData.map((row, idx) => (
+                  {displayedGradeData.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="py-6 text-center text-slate-500">
+                        Tidak ada rombel yang memiliki siswa.
+                        {emptyClassesCount > 0 && hideEmptyClasses && (
+                          <div className="text-[11px] text-amber-600 dark:text-amber-400 mt-1">
+                            ({emptyClassesCount} rombel dengan 0 siswa disembunyikan)
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ) : (
+                    displayedGradeData.map((row, idx) => (
                     <tr
                       key={idx}
                       className="hover:bg-blue-50/30 dark:hover:bg-slate-800/40 transition-colors"
@@ -543,8 +591,9 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                         )}
                       </td>
                     </tr>
-                  ))}
-                </tbody>
+                  ))
+                )}
+              </tbody>
                 <tfoot>
                   <tr className="bg-slate-100/80 dark:bg-slate-800/90 font-black text-slate-900 dark:text-slate-100 border-t-2 border-slate-300 dark:border-slate-700">
                     <td className="py-3 px-3">TOTAL KESELURUHAN</td>

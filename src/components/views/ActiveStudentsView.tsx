@@ -606,6 +606,23 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
     });
   }, [availableClasses, activeStudents, totalActive]);
 
+  // Sembunyikan rombel yang tidak ada siswanya atau 0
+  const [hideEmptyRombel, setHideEmptyRombel] = useState<boolean>(true);
+
+  // Rombel aktif yang memiliki siswa (sembunyikan rombel kosong / 0 siswa)
+  const visibleRombelStats = useMemo(() => {
+    const list = hideEmptyRombel ? rombelStats.filter(r => r.total > 0) : rombelStats;
+    return list.map((item, idx) => ({
+      ...item,
+      no: idx + 1,
+    }));
+  }, [rombelStats, hideEmptyRombel]);
+
+  // Jumlah rombel kosong dengan 0 siswa
+  const emptyRombelCount = useMemo(() => {
+    return rombelStats.filter(r => r.total === 0).length;
+  }, [rombelStats]);
+
   // Rekapitulasi per Tingkat Kelas (Tingkat 1 sampai dengan Tingkat 6)
   const tingkatStats = useMemo(() => {
     return [1, 2, 3, 4, 5, 6].map((tingkat) => {
@@ -628,6 +645,11 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
       };
     });
   }, [activeStudents, availableClasses, totalActive]);
+
+  const visibleTingkatStats = useMemo(() => {
+    if (!hideEmptyRombel) return tingkatStats;
+    return tingkatStats.filter(ts => ts.total > 0);
+  }, [tingkatStats, hideEmptyRombel]);
 
   // Print function
   const handlePrint = () => {
@@ -2234,7 +2256,25 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
                 </p>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setHideEmptyRombel(prev => !prev)}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl border transition-all cursor-pointer shadow-xs",
+                    hideEmptyRombel
+                      ? "bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-950/60 dark:text-amber-200 dark:border-amber-800"
+                      : "bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700 hover:bg-slate-200"
+                  )}
+                  title={hideEmptyRombel ? "Klik untuk menampilkan semua rombel termasuk yang 0 siswa" : "Klik untuk menyembunyikan rombel yang tidak ada siswanya atau 0"}
+                >
+                  <Filter className="w-3.5 h-3.5" />
+                  <span>
+                    {hideEmptyRombel
+                      ? `Sembunyikan Rombel Kosong / 0 (${emptyRombelCount})`
+                      : 'Tampilkan Semua Rombel'}
+                  </span>
+                </button>
                 <button
                   type="button"
                   onClick={handlePrint}
@@ -2261,32 +2301,45 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-700 font-medium">
-                  {rombelStats.map((item) => (
-                    <tr key={item.kelas} className="hover:bg-blue-50/40 dark:hover:bg-slate-800/40 transition-colors">
-                      <td className="py-3 px-3 text-center font-bold text-slate-500 font-mono border-r border-slate-200 dark:border-slate-700">
-                        {item.no}
-                      </td>
-                      <td className="py-3 px-4 font-extrabold text-blue-900 dark:text-blue-300 border-r border-slate-200 dark:border-slate-700">
-                        {item.kelas}
-                      </td>
-                      <td className="py-3 px-4 text-slate-700 dark:text-slate-300 border-r border-slate-200 dark:border-slate-700">
-                        <div className="font-bold">{item.waliKelas}</div>
-                        <div className="text-[10px] text-slate-400 font-mono">NIP: {item.nipWaliKelas}</div>
-                      </td>
-                      <td className="py-3 px-3 text-center font-bold text-blue-700 dark:text-blue-400 border-r border-slate-200 dark:border-slate-700 bg-blue-50/30 dark:bg-blue-950/20 font-mono text-sm">
-                        {item.jmlL}
-                      </td>
-                      <td className="py-3 px-3 text-center font-bold text-pink-700 dark:text-pink-400 border-r border-slate-200 dark:border-slate-700 bg-pink-50/30 dark:bg-pink-950/20 font-mono text-sm">
-                        {item.jmlP}
-                      </td>
-                      <td className="py-3 px-3 text-center font-black text-slate-900 dark:text-slate-100 border-r border-slate-200 dark:border-slate-700 bg-amber-50/40 dark:bg-amber-950/20 font-mono text-base">
-                        {item.total}
-                      </td>
-                      <td className="py-3 px-3 text-center font-bold text-slate-600 dark:text-slate-400 font-mono">
-                        {item.persentase}%
+                  {visibleRombelStats.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="py-8 text-center text-slate-500">
+                        Tidak ada rombel yang memiliki siswa aktif pada Tahun Ajar {activeTP}.
+                        {emptyRombelCount > 0 && hideEmptyRombel && (
+                          <div className="mt-1 text-xs text-amber-600 dark:text-amber-400 font-medium">
+                            ({emptyRombelCount} rombel dengan 0 siswa disembunyikan)
+                          </div>
+                        )}
                       </td>
                     </tr>
-                  ))}
+                  ) : (
+                    visibleRombelStats.map((item) => (
+                      <tr key={item.kelas} className="hover:bg-blue-50/40 dark:hover:bg-slate-800/40 transition-colors">
+                        <td className="py-3 px-3 text-center font-bold text-slate-500 font-mono border-r border-slate-200 dark:border-slate-700">
+                          {item.no}
+                        </td>
+                        <td className="py-3 px-4 font-extrabold text-blue-900 dark:text-blue-300 border-r border-slate-200 dark:border-slate-700">
+                          {item.kelas}
+                        </td>
+                        <td className="py-3 px-4 text-slate-700 dark:text-slate-300 border-r border-slate-200 dark:border-slate-700">
+                          <div className="font-bold">{item.waliKelas}</div>
+                          <div className="text-[10px] text-slate-400 font-mono">NIP: {item.nipWaliKelas}</div>
+                        </td>
+                        <td className="py-3 px-3 text-center font-bold text-blue-700 dark:text-blue-400 border-r border-slate-200 dark:border-slate-700 bg-blue-50/30 dark:bg-blue-950/20 font-mono text-sm">
+                          {item.jmlL}
+                        </td>
+                        <td className="py-3 px-3 text-center font-bold text-pink-700 dark:text-pink-400 border-r border-slate-200 dark:border-slate-700 bg-pink-50/30 dark:bg-pink-950/20 font-mono text-sm">
+                          {item.jmlP}
+                        </td>
+                        <td className="py-3 px-3 text-center font-black text-slate-900 dark:text-slate-100 border-r border-slate-200 dark:border-slate-700 bg-amber-50/40 dark:bg-amber-950/20 font-mono text-base">
+                          {item.total}
+                        </td>
+                        <td className="py-3 px-3 text-center font-bold text-slate-600 dark:text-slate-400 font-mono">
+                          {item.persentase}%
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
                 <tfoot>
                   <tr className="bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-black text-xs border-t-2 border-slate-300 dark:border-slate-600">
@@ -2336,37 +2389,54 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 dark:divide-slate-700 font-medium">
-                    {tingkatStats.map((ts) => (
-                      <tr key={`ts-${ts.tingkat}`} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
-                        <td className="py-2.5 px-3 text-center font-bold text-slate-500 font-mono border-r border-slate-200 dark:border-slate-700">
-                          {ts.tingkat}
-                        </td>
-                        <td className="py-2.5 px-4 font-bold text-slate-900 dark:text-slate-100 border-r border-slate-200 dark:border-slate-700">
-                          {ts.label}
-                        </td>
-                        <td className="py-2.5 px-3 text-center border-r border-slate-200 dark:border-slate-700">
-                          <div className="flex flex-wrap items-center justify-center gap-1">
-                            {ts.rombels.map(r => (
-                              <span key={r} className="px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300 text-[10px] font-bold">
-                                {r}
-                              </span>
-                            ))}
-                          </div>
-                        </td>
-                        <td className="py-2.5 px-3 text-center font-bold text-blue-700 dark:text-blue-400 border-r border-slate-200 dark:border-slate-700 bg-blue-50/20 dark:bg-blue-950/10 font-mono">
-                          {ts.jmlL}
-                        </td>
-                        <td className="py-2.5 px-3 text-center font-bold text-pink-700 dark:text-pink-400 border-r border-slate-200 dark:border-slate-700 bg-pink-50/20 dark:bg-pink-950/10 font-mono">
-                          {ts.jmlP}
-                        </td>
-                        <td className="py-2.5 px-3 text-center font-black text-slate-900 dark:text-slate-100 border-r border-slate-200 dark:border-slate-700 bg-amber-50/30 dark:bg-amber-950/10 font-mono text-sm">
-                          {ts.total}
-                        </td>
-                        <td className="py-2.5 px-3 text-center font-bold text-slate-600 dark:text-slate-400 font-mono">
-                          {ts.persentase}%
+                    {visibleTingkatStats.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="py-8 text-center text-slate-500">
+                          Tidak ada tingkat kelas yang memiliki siswa aktif.
                         </td>
                       </tr>
-                    ))}
+                    ) : (
+                      visibleTingkatStats.map((ts) => {
+                        const rombelsToShow = hideEmptyRombel
+                          ? ts.rombels.filter(r => activeStudents.some(s => s.kelasSekarang === r))
+                          : ts.rombels;
+                        return (
+                          <tr key={`ts-${ts.tingkat}`} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
+                            <td className="py-2.5 px-3 text-center font-bold text-slate-500 font-mono border-r border-slate-200 dark:border-slate-700">
+                              {ts.tingkat}
+                            </td>
+                            <td className="py-2.5 px-4 font-bold text-slate-900 dark:text-slate-100 border-r border-slate-200 dark:border-slate-700">
+                              {ts.label}
+                            </td>
+                            <td className="py-2.5 px-3 text-center border-r border-slate-200 dark:border-slate-700">
+                              <div className="flex flex-wrap items-center justify-center gap-1">
+                                {rombelsToShow.length > 0 ? (
+                                  rombelsToShow.map(r => (
+                                    <span key={r} className="px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300 text-[10px] font-bold">
+                                      {r}
+                                    </span>
+                                  ))
+                                ) : (
+                                  <span className="text-[10px] text-slate-400 italic">Tidak ada</span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="py-2.5 px-3 text-center font-bold text-blue-700 dark:text-blue-400 border-r border-slate-200 dark:border-slate-700 bg-blue-50/20 dark:bg-blue-950/10 font-mono">
+                              {ts.jmlL}
+                            </td>
+                            <td className="py-2.5 px-3 text-center font-bold text-pink-700 dark:text-pink-400 border-r border-slate-200 dark:border-slate-700 bg-pink-50/20 dark:bg-pink-950/10 font-mono">
+                              {ts.jmlP}
+                            </td>
+                            <td className="py-2.5 px-3 text-center font-black text-slate-900 dark:text-slate-100 border-r border-slate-200 dark:border-slate-700 bg-amber-50/30 dark:bg-amber-950/10 font-mono text-sm">
+                              {ts.total}
+                            </td>
+                            <td className="py-2.5 px-3 text-center font-bold text-slate-600 dark:text-slate-400 font-mono">
+                              {ts.persentase}%
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
                   </tbody>
                   <tfoot>
                     <tr className="bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-black text-xs border-t border-slate-300 dark:border-slate-600">
@@ -2469,52 +2539,83 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
                 </p>
               </div>
 
-              <div className="flex items-center gap-3 text-xs font-bold">
-                <span className="flex items-center gap-1.5 text-blue-600 dark:text-blue-400">
-                  <span className="w-3 h-3 rounded-full bg-blue-600" />
-                  <span>Laki-laki (L)</span>
-                </span>
-                <span className="flex items-center gap-1.5 text-pink-600 dark:text-pink-400">
-                  <span className="w-3 h-3 rounded-full bg-pink-500" />
-                  <span>Perempuan (P)</span>
-                </span>
+              <div className="flex flex-wrap items-center gap-3 text-xs font-bold">
+                <button
+                  type="button"
+                  onClick={() => setHideEmptyRombel(prev => !prev)}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl border transition-all cursor-pointer shadow-xs",
+                    hideEmptyRombel
+                      ? "bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-950/60 dark:text-amber-200 dark:border-amber-800"
+                      : "bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700 hover:bg-slate-200"
+                  )}
+                  title={hideEmptyRombel ? "Klik untuk menampilkan semua rombel termasuk yang 0 siswa" : "Klik untuk menyembunyikan rombel yang tidak ada siswanya atau 0"}
+                >
+                  <Filter className="w-3.5 h-3.5" />
+                  <span>
+                    {hideEmptyRombel
+                      ? `Sembunyikan Rombel Kosong / 0 (${emptyRombelCount})`
+                      : 'Tampilkan Semua Rombel'}
+                  </span>
+                </button>
+                <div className="flex items-center gap-3">
+                  <span className="flex items-center gap-1.5 text-blue-600 dark:text-blue-400">
+                    <span className="w-3 h-3 rounded-full bg-blue-600" />
+                    <span>Laki-laki (L)</span>
+                  </span>
+                  <span className="flex items-center gap-1.5 text-pink-600 dark:text-pink-400">
+                    <span className="w-3 h-3 rounded-full bg-pink-500" />
+                    <span>Perempuan (P)</span>
+                  </span>
+                </div>
               </div>
             </div>
 
             <div className="space-y-4">
-              {rombelStats.map((item) => {
-                const pL = item.total > 0 ? Math.round((item.jmlL / item.total) * 100) : 0;
-                const pP = item.total > 0 ? (100 - pL) : 0;
+              {visibleRombelStats.length === 0 ? (
+                <div className="p-8 text-center text-xs text-slate-500 bg-slate-50 dark:bg-slate-800/40 rounded-xl">
+                  Tidak ada rombel dengan siswa aktif untuk divisualisasikan.
+                  {emptyRombelCount > 0 && hideEmptyRombel && (
+                    <div className="mt-1 text-xs text-amber-600 dark:text-amber-400 font-medium">
+                      ({emptyRombelCount} rombel dengan 0 siswa disembunyikan)
+                    </div>
+                  )}
+                </div>
+              ) : (
+                visibleRombelStats.map((item) => {
+                  const pL = item.total > 0 ? Math.round((item.jmlL / item.total) * 100) : 0;
+                  const pP = item.total > 0 ? (100 - pL) : 0;
 
-                return (
-                  <div key={item.kelas} className="space-y-1.5">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-extrabold text-slate-800 dark:text-slate-200">
-                        {item.kelas} <span className="font-normal text-slate-400">({item.total} Siswa)</span>
-                      </span>
-                      <div className="flex items-center gap-2 font-mono font-bold text-[11px]">
-                        <span className="text-blue-600 dark:text-blue-400">L: {item.jmlL} ({pL}%)</span>
-                        <span className="text-slate-300">•</span>
-                        <span className="text-pink-600 dark:text-pink-400">P: {item.jmlP} ({pP}%)</span>
+                  return (
+                    <div key={item.kelas} className="space-y-1.5">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-extrabold text-slate-800 dark:text-slate-200">
+                          {item.kelas} <span className="font-normal text-slate-400">({item.total} Siswa)</span>
+                        </span>
+                        <div className="flex items-center gap-2 font-mono font-bold text-[11px]">
+                          <span className="text-blue-600 dark:text-blue-400">L: {item.jmlL} ({pL}%)</span>
+                          <span className="text-slate-300">•</span>
+                          <span className="text-pink-600 dark:text-pink-400">P: {item.jmlP} ({pP}%)</span>
+                        </div>
+                      </div>
+
+                      {/* Stacked Bar */}
+                      <div className="w-full h-4 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden flex shadow-inner">
+                        <div 
+                          style={{ width: `${pL}%` }}
+                          className="bg-blue-600 hover:bg-blue-500 transition-all cursor-pointer"
+                          title={`${item.kelas}: ${item.jmlL} Laki-laki (${pL}%)`}
+                        />
+                        <div 
+                          style={{ width: `${pP}%` }}
+                          className="bg-pink-500 hover:bg-pink-400 transition-all cursor-pointer"
+                          title={`${item.kelas}: ${item.jmlP} Perempuan (${pP}%)`}
+                        />
                       </div>
                     </div>
-
-                    {/* Stacked Bar */}
-                    <div className="w-full h-4 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden flex shadow-inner">
-                      <div 
-                        style={{ width: `${pL}%` }}
-                        className="bg-blue-600 hover:bg-blue-500 transition-all cursor-pointer"
-                        title={`${item.kelas}: ${item.jmlL} Laki-laki (${pL}%)`}
-                      />
-                      <div 
-                        style={{ width: `${pP}%` }}
-                        className="bg-pink-500 hover:bg-pink-400 transition-all cursor-pointer"
-                        title={`${item.kelas}: ${item.jmlP} Perempuan (${pP}%)`}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })
+              )}
             </div>
           </div>
         </div>
