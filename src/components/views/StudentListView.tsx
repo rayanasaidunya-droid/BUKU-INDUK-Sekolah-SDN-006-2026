@@ -699,6 +699,7 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
             >
               <option value={10}>10 baris</option>
               <option value={25}>25 baris</option>
+              <option value={30}>30 baris (Standar)</option>
               <option value={50}>50 baris</option>
             </select>
             <span>dari <strong>{filteredStudents.length}</strong> total data siswa</span>

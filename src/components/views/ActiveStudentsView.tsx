@@ -162,7 +162,7 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
   const [sortBy, setSortBy] = useState<'nis' | 'nama' | 'kelas' | 'tanggal'>('nis');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 12;
+  const [itemsPerPage, setItemsPerPage] = useState<number>(30);
 
   // Active School Year
   const activeTP = schoolProfile.tahunPelajaranAktif || '2025/2026';
@@ -1048,7 +1048,7 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
             <div className="px-5 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/70 dark:bg-slate-800/40">
               <span className="text-xs font-extrabold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-2">
                 <Users className="w-4 h-4 text-[#003399] dark:text-blue-400" />
-                <span>Daftar Siswa Terdaftar: {filteredActiveStudents.length} Peserta Didik</span>
+                <span>Daftar Siswa Terdaftar: {filteredActiveStudents.length} Peserta Didik ({itemsPerPage} nomer per halaman)</span>
               </span>
               <span className="text-xs text-slate-500 font-mono">
                 Halaman {currentPage} dari {totalPages}
@@ -1266,53 +1266,79 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
             </div>
 
             {/* Pagination Controls */}
-            {totalPages > 1 && (
-              <div className="px-5 py-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/30 print:hidden">
-                <button
-                  type="button"
-                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                  disabled={currentPage === 1}
-                  className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-300 dark:border-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
-                >
-                  <ChevronLeft className="w-3.5 h-3.5" />
-                  <span>Sebelumnya</span>
-                </button>
-
-                <div className="flex items-center gap-1">
-                  {Array.from({ length: totalPages }).map((_, i) => {
-                    const pageNum = i + 1;
-                    if (pageNum === 1 || pageNum === totalPages || (pageNum >= currentPage - 1 && pageNum <= currentPage + 1)) {
-                      return (
-                        <button
-                          key={pageNum}
-                          onClick={() => setCurrentPage(pageNum)}
-                          className={cn(
-                            "w-7 h-7 text-xs font-bold rounded-lg transition-colors cursor-pointer",
-                            currentPage === pageNum
-                              ? "bg-[#003399] text-white"
-                              : "hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300"
-                          )}
-                        >
-                          {pageNum}
-                        </button>
-                      );
-                    }
-                    if (pageNum === currentPage - 2 || pageNum === currentPage + 2) {
-                      return <span key={pageNum} className="text-slate-400">...</span>;
-                    }
-                    return null;
-                  })}
+            {filteredActiveStudents.length > 0 && (
+              <div className="px-5 py-3 border-t border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-50/50 dark:bg-slate-800/30 print:hidden text-xs">
+                {/* Page Size Selector & Numbers Info */}
+                <div className="flex flex-wrap items-center gap-2 text-slate-600 dark:text-slate-400">
+                  <span className="font-medium">Tampilkan:</span>
+                  <select
+                    value={itemsPerPage}
+                    onChange={(e) => {
+                      setItemsPerPage(Number(e.target.value));
+                      setCurrentPage(1);
+                    }}
+                    className="px-2.5 py-1 text-xs font-bold rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 cursor-pointer focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                  >
+                    <option value={30}>30 nomor (Standar)</option>
+                    <option value={50}>50 nomor</option>
+                    <option value={100}>100 nomor</option>
+                    <option value={filteredActiveStudents.length || 300}>Semua ({filteredActiveStudents.length})</option>
+                  </select>
+                  <span className="text-slate-400">•</span>
+                  <span>
+                    Menampilkan No. <strong>{(currentPage - 1) * itemsPerPage + 1}</strong> - <strong>{Math.min(currentPage * itemsPerPage, filteredActiveStudents.length)}</strong> dari <strong>{filteredActiveStudents.length}</strong> siswa aktif
+                  </span>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                  disabled={currentPage === totalPages}
-                  className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-300 dark:border-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
-                >
-                  <span>Selanjutnya</span>
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </button>
+                {totalPages > 1 && (
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                      disabled={currentPage === 1}
+                      className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-300 dark:border-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5" />
+                      <span>Sebelumnya</span>
+                    </button>
+
+                    <div className="flex items-center gap-1">
+                      {Array.from({ length: totalPages }).map((_, i) => {
+                        const pageNum = i + 1;
+                        if (pageNum === 1 || pageNum === totalPages || (pageNum >= currentPage - 1 && pageNum <= currentPage + 1)) {
+                          return (
+                            <button
+                              key={pageNum}
+                              onClick={() => setCurrentPage(pageNum)}
+                              className={cn(
+                                "w-7 h-7 text-xs font-bold rounded-lg transition-colors cursor-pointer",
+                                currentPage === pageNum
+                                  ? "bg-[#003399] text-white shadow-xs"
+                                  : "hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300"
+                              )}
+                            >
+                              {pageNum}
+                            </button>
+                          );
+                        }
+                        if (pageNum === currentPage - 2 || pageNum === currentPage + 2) {
+                          return <span key={pageNum} className="text-slate-400">...</span>;
+                        }
+                        return null;
+                      })}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                      disabled={currentPage === totalPages}
+                      className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-300 dark:border-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                    >
+                      <span>Selanjutnya</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
