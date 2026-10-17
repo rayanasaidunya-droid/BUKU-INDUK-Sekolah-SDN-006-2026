@@ -43,6 +43,13 @@ import { OfficialNationalLogo, TutWuriHandayaniSDLogo } from '../../utils/logoHe
 import { downloadRombelTemplate } from '../../utils/excelHelper';
 import { ImportRombelModal } from '../modals/ImportRombelModal';
 import { ManageClassesModal } from '../modals/ManageClassesModal';
+import { EditTahunPelajaranModal } from '../modals/EditTahunPelajaranModal';
+import { 
+  projectStudentsForAcademicYear, 
+  ProjectedStudent,
+  isKelas1Sampai6,
+  getTingkatKelasNumber 
+} from '../../utils/academicYearHelper';
 import { ActiveTab } from '../layout/Sidebar';
 
 export type ActiveStudentsSubTab = 
@@ -66,68 +73,7 @@ interface ActiveStudentsViewProps {
   onBack?: () => void;
 }
 
-/**
- * Helper: Cek apakah kelas berada di tingkat 1 sampai dengan 6 (Sekolah Dasar)
- */
-export const isKelas1Sampai6 = (kelasName?: string): boolean => {
-  if (!kelasName) return false;
-  const k = kelasName.trim().toLowerCase();
-
-  // Exclude non-SD levels explicitly
-  if (
-    k.includes('alumni') || 
-    k.includes('lulus') || 
-    k.includes('tamat') || 
-    k.includes('tk') || 
-    k.includes('paud') || 
-    k.includes('kb') ||
-    k.includes('tpa') ||
-    k.includes('ra') ||
-    k.includes('smp') ||
-    k.includes('mts') ||
-    k.includes('sma') ||
-    k.includes('smk')
-  ) {
-    return false;
-  }
-
-  // Exclude secondary grades: 7, 8, 9, 10, 11, 12, VII, VIII, IX, X, XI, XII
-  if (/\b(?:kelas|tingkat|rombel)?\s*(?:7|8|9|10|11|12|vii|viii|ix|x|xi|xii)\b/i.test(k)) {
-    return false;
-  }
-
-  // Check for digits 1-6 (e.g. "Kelas 1", "Kelas 1A", "1B", "Kelas 2", "3-A", "Kelas 6", "6B")
-  if (/\b(?:kelas|tingkat|rombel)?\s*([1-6])(?![0-9])/i.test(k)) {
-    return true;
-  }
-
-  // Check for Roman numerals I-VI (e.g. "Kelas I", "Kelas II-A", "VI", etc.)
-  if (/\b(?:kelas|tingkat|rombel)?\s*(vi|v|iv|iii|ii|i)\b/i.test(k)) {
-    return true;
-  }
-
-  return false;
-};
-
-/**
- * Helper: Mengambil nomor tingkat 1 s/d 6 untuk pengelompokan & sorting
- */
-export const getTingkatKelasNumber = (kelasName?: string): number => {
-  if (!kelasName) return 1;
-  const k = kelasName.trim().toLowerCase();
-
-  const numMatch = k.match(/(?:kelas|tingkat|rombel)?\s*([1-6])(?![0-9])/i);
-  if (numMatch) return parseInt(numMatch[1], 10);
-
-  if (/\bvi\b/i.test(k)) return 6;
-  if (/\bv\b/i.test(k)) return 5;
-  if (/\biv\b/i.test(k)) return 4;
-  if (/\biii\b/i.test(k)) return 3;
-  if (/\bii\b/i.test(k)) return 2;
-  if (/\bi\b/i.test(k)) return 1;
-
-  return 1;
-};
+export { isKelas1Sampai6, getTingkatKelasNumber };
 
 export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
   onOpenAddModal,
@@ -144,6 +90,7 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
   const { 
     students, 
     schoolProfile, 
+    updateSchoolProfile,
     currentRole, 
     updateStudent, 
     addStudent, 
@@ -164,14 +111,50 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState<number>(30);
 
-  // Active School Year
+  // Active School Year & TP List
   const activeTP = schoolProfile.tahunPelajaranAktif || '2025/2026';
   const activeSemester = schoolProfile.semesterAktif || 'Ganjil';
+  const [isEditTPModalOpen, setIsEditTPModalOpen] = useState(false);
 
-  // Exclusively Active Students in Grade 1 to 6 (Kelas 1 s/d Kelas 6, Rombel Tetap Variabel)
+  // Registered Academic Years list
+  const tpList = useMemo(() => {
+    const fromProfile = schoolProfile.daftarTahunPelajaran || [];
+    const defaults = ['2023/2024', '2024/2025', '2025/2026', '2026/2027', '2027/2028'];
+    return Array.from(new Set([...defaults, ...fromProfile, activeTP])).sort();
+  }, [schoolProfile.daftarTahunPelajaran, activeTP]);
+
+  const handleSelectAcademicYear = (newTP: string) => {
+    updateSchoolProfile({ tahunPelajaranAktif: newTP });
+    logActivity(
+      'PENGATURAN',
+      `Mengganti Tahun Pelajaran Aktif ke: TP ${newTP}. Data rombel siswa otomatis disesuaikan.`
+    );
+    setCurrentPage(1);
+  };
+
+  // Proyeksi Otomatis Siswa untuk Tahun Pelajaran Aktif (activeTP)
+  // Saat ganti TP: data rombel naik/turun otomatis, siswa kelas 1 di tahun sebelumnya tertulis "Belum Masuk SD"
+  const projectedStudents = useMemo(() => {
+    return projectStudentsForAcademicYear(students, activeTP, '2025/2026');
+  }, [students, activeTP]);
+
+  // Exclusively Active Students in Grade 1 to 6 on activeTP
   const activeStudents = useMemo(() => {
-    return students.filter(s => s.status === 'Aktif' && isKelas1Sampai6(s.kelasSekarang));
-  }, [students]);
+    return projectedStudents.filter(s => s.status === 'Aktif' && isKelas1Sampai6(s.kelasSekarang));
+  }, [projectedStudents]);
+
+  // Students with status "Belum Masuk SD" on activeTP
+  const belumMasukSDStudents = useMemo(() => {
+    return projectedStudents.filter(s => s.status === 'Belum Masuk SD');
+  }, [projectedStudents]);
+
+  // Display scope for Daftar tab: Active students (Kelas 1-6) + Belum Masuk SD students
+  const displayScopeStudents = useMemo(() => {
+    return projectedStudents.filter(s => 
+      (s.status === 'Aktif' && isKelas1Sampai6(s.kelasSekarang)) || 
+      s.status === 'Belum Masuk SD'
+    );
+  }, [projectedStudents]);
 
   // Modal Import Rombel & Download Template State
   const [isImportRombelModalOpen, setIsImportRombelModalOpen] = useState(false);
@@ -205,7 +188,7 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
 
   // Filtered students for Daftar tab with support for Tingkat (1-6) or specific variable rombel and sorting
   const filteredActiveStudents = useMemo(() => {
-    return activeStudents.filter(s => {
+    return displayScopeStudents.filter(s => {
       const matchSearch = searchQuery.trim() === '' || 
         s.namaLengkap.toLowerCase().includes(searchQuery.toLowerCase()) ||
         s.noInduk.includes(searchQuery) ||
@@ -215,9 +198,13 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
       let matchClass = true;
       if (selectedClass === 'ALL') {
         matchClass = true;
+      } else if (selectedClass === 'ONLY_ACTIVE') {
+        matchClass = s.status === 'Aktif';
+      } else if (selectedClass === 'BELUM_MASUK_SD') {
+        matchClass = s.status === 'Belum Masuk SD';
       } else if (selectedClass.startsWith('TINGKAT_')) {
         const targetTingkat = parseInt(selectedClass.replace('TINGKAT_', ''), 10);
-        matchClass = getTingkatKelasNumber(s.kelasSekarang) === targetTingkat;
+        matchClass = s.status === 'Aktif' && getTingkatKelasNumber(s.kelasSekarang) === targetTingkat;
       } else {
         matchClass = s.kelasSekarang === selectedClass;
       }
@@ -232,6 +219,8 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
       } else if (sortBy === 'nis') {
         comparison = a.noInduk.localeCompare(b.noInduk, undefined, { numeric: true });
       } else if (sortBy === 'kelas') {
+        if (a.status === 'Belum Masuk SD' && b.status !== 'Belum Masuk SD') return -1;
+        if (b.status === 'Belum Masuk SD' && a.status !== 'Belum Masuk SD') return 1;
         const tingkatA = getTingkatKelasNumber(a.kelasSekarang);
         const tingkatB = getTingkatKelasNumber(b.kelasSekarang);
         if (tingkatA !== tingkatB) {
@@ -246,7 +235,7 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
       }
       return sortOrder === 'asc' ? comparison : -comparison;
     });
-  }, [activeStudents, searchQuery, selectedClass, selectedGender, sortBy, sortOrder]);
+  }, [displayScopeStudents, searchQuery, selectedClass, selectedGender, sortBy, sortOrder]);
 
   // Pagination for Daftar tab
   const totalPages = Math.ceil(filteredActiveStudents.length / itemsPerPage) || 1;
@@ -261,6 +250,7 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
   const totalPerempuan = activeStudents.filter(s => s.jenisKelamin === 'P').length;
   const persenLaki = totalActive > 0 ? Math.round((totalLaki / totalActive) * 100) : 0;
   const persenPerempuan = totalActive > 0 ? (100 - persenLaki) : 0;
+  const totalBelumMasukSD = belumMasukSDStudents.length;
 
   // ==========================================
   // TAB 2: INLINE QUICK EDIT STATE
@@ -665,17 +655,48 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="px-3 py-1 rounded-full text-xs font-black bg-amber-400 text-slate-950 uppercase tracking-wider flex items-center gap-1.5 shadow-sm">
-                <Calendar className="w-3.5 h-3.5" />
-                <span>TAHUN AJARAN AKTIF: {activeTP}</span>
-              </span>
+              <div className="flex items-center gap-1.5 bg-amber-400 text-slate-950 px-2.5 py-1 rounded-xl font-black text-xs shadow-md">
+                <Calendar className="w-3.5 h-3.5 text-slate-950" />
+                <span className="uppercase tracking-wider text-[11px]">TP Aktif:</span>
+                <select
+                  value={activeTP}
+                  onChange={(e) => handleSelectAcademicYear(e.target.value)}
+                  className="bg-white text-slate-950 font-black text-xs px-2 py-0.5 rounded-lg border-none shadow-xs cursor-pointer focus:ring-2 focus:ring-blue-600 focus:outline-hidden"
+                  title="Pilih Tahun Pelajaran untuk melihat perubahan rombel siswa secara otomatis"
+                >
+                  {tpList.map(tp => (
+                    <option key={tp} value={tp}>
+                      TP {tp} {tp === (schoolProfile.tahunPelajaranAktif || '2025/2026') ? '(Aktif)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {currentRole !== 'umum' && (
+                <button
+                  type="button"
+                  onClick={() => setIsEditTPModalOpen(true)}
+                  className="px-2.5 py-1 bg-white/20 hover:bg-white/30 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1"
+                  title="Buka dialog kelola & tambah tahun pelajaran"
+                >
+                  <Edit3 className="w-3.5 h-3.5 text-amber-300" />
+                  <span>Kelola TP</span>
+                </button>
+              )}
+
               <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-white/20 text-blue-100 backdrop-blur-xs">
                 Semester {activeSemester}
               </span>
               <span className="px-2.5 py-1 rounded-full text-xs font-extrabold bg-emerald-500/80 text-white backdrop-blur-xs flex items-center gap-1">
                 <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>Kelas 1 s/d Kelas 6 (Aktif)</span>
+                <span>{totalActive} Siswa Aktif (Kelas 1-6)</span>
               </span>
+              {totalBelumMasukSD > 0 && (
+                <span className="px-2.5 py-1 rounded-full text-xs font-black bg-amber-500 text-slate-950 shadow-xs flex items-center gap-1">
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  <span>{totalBelumMasukSD} Belum Masuk SD</span>
+                </span>
+              )}
               <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-indigo-500/80 text-white backdrop-blur-xs">
                 Rombel Variabel ({availableClasses.length} Rombel)
               </span>
@@ -687,7 +708,7 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
             </h1>
 
             <p className="text-xs sm:text-sm text-blue-100 max-w-2xl leading-relaxed">
-              Daftar resmi peserta didik aktif SDN 006 SUNGAI BULUH khusus untuk <strong className="text-amber-300 font-bold">Kelas 1 sampai dengan Kelas 6</strong> pada Tahun Pelajaran <strong className="text-amber-300 font-bold">{activeTP}</strong>. Rombongan belajar (rombel) bersifat fleksibel/variabel, dilengkapi menu edit riwayat masuk, mutasi masuk/keluar, tabel rekapitulasi rombel, dan analisis gender (L/P).
+              Daftar resmi peserta didik aktif SDN 006 SUNGAI BULUH khusus untuk <strong className="text-amber-300 font-bold">Kelas 1 sampai dengan Kelas 6</strong> pada Tahun Pelajaran <strong className="text-amber-300 font-bold">{activeTP}</strong>. Tingkatan rombel otomatis naik/turun saat tahun ajaran diganti (siswa kelas 1 pada tahun sebelumnya otomatis berstatus <span className="underline decoration-amber-300 font-bold">Belum Masuk SD</span>).
             </p>
           </div>
 
@@ -904,7 +925,13 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
                   }}
                   className="bg-transparent font-bold text-slate-800 dark:text-slate-200 focus:outline-hidden cursor-pointer"
                 >
-                  <option value="ALL">Semua Rombel (Kelas 1 - 6) • {totalActive}</option>
+                  <option value="ALL">Semua Siswa Terdaftar • {displayScopeStudents.length}</option>
+                  <option value="ONLY_ACTIVE">Khusus Siswa Aktif (Kelas 1 - 6) • {totalActive}</option>
+                  {totalBelumMasukSD > 0 && (
+                    <option value="BELUM_MASUK_SD" className="font-extrabold text-amber-700">
+                      ★ Belum Masuk SD • {totalBelumMasukSD} Siswa
+                    </option>
+                  )}
                   <optgroup label="Filter per Tingkat Kelas (1 s/d 6)">
                     {[1, 2, 3, 4, 5, 6].map(t => {
                       const count = activeStudents.filter(s => getTingkatKelasNumber(s.kelasSekarang) === t).length;
@@ -1013,8 +1040,29 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
                     : "bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300"
                 )}
               >
-                Semua Kelas (1-6) • {totalActive}
+                Semua Siswa • {displayScopeStudents.length}
               </button>
+              {totalBelumMasukSD > 0 && (
+                <button
+                  type="button"
+                  onClick={() => { setSelectedClass('BELUM_MASUK_SD'); setCurrentPage(1); }}
+                  className={cn(
+                    "px-2.5 py-1 rounded-lg text-[11px] font-extrabold transition-all cursor-pointer flex items-center gap-1",
+                    selectedClass === 'BELUM_MASUK_SD'
+                      ? "bg-amber-600 text-white shadow-xs scale-105"
+                      : "bg-amber-100 hover:bg-amber-200 dark:bg-amber-950/60 dark:hover:bg-amber-900/60 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-800"
+                  )}
+                >
+                  <AlertTriangle className="w-3 h-3 text-amber-500" />
+                  <span>Belum Masuk SD</span>
+                  <span className={cn(
+                    "px-1 py-0.2 rounded text-[9.5px] font-mono",
+                    selectedClass === 'BELUM_MASUK_SD' ? "bg-white/20 text-white" : "bg-amber-200 dark:bg-amber-800 text-amber-900 dark:text-amber-200"
+                  )}>
+                    {totalBelumMasukSD}
+                  </span>
+                </button>
+              )}
               {[1, 2, 3, 4, 5, 6].map(t => {
                 const isSelected = selectedClass === `TINGKAT_${t}`;
                 const count = activeStudents.filter(s => getTingkatKelasNumber(s.kelasSekarang) === t).length;
@@ -1054,6 +1102,52 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
                 Halaman {currentPage} dari {totalPages}
               </span>
             </div>
+
+            {/* Informative Banner when students have 'Belum Masuk SD' in this school year */}
+            {totalBelumMasukSD > 0 && (
+              <div className="mx-5 my-3 p-3.5 bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/40 dark:to-orange-950/20 border border-amber-300 dark:border-amber-800 rounded-xl text-xs text-amber-950 dark:text-amber-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+                <div className="flex items-start sm:items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-xs font-black">
+                    <AlertTriangle className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <p className="font-extrabold text-amber-950 dark:text-amber-100 flex items-center gap-2">
+                      <span>Tahun Pelajaran {activeTP}: {totalBelumMasukSD} Siswa Berstatus "Belum Masuk SD"</span>
+                      <span className="text-[10px] px-1.5 py-0.2 bg-amber-600 text-white font-bold rounded">
+                        Otomatis
+                      </span>
+                    </p>
+                    <p className="text-[11px] text-amber-800 dark:text-amber-300 mt-0.5 leading-relaxed">
+                      Siswa kelas 1 pada tahun pelajaran sebelumnya otomatis berstatus <strong>Belum Masuk SD</strong> karena belum terdaftar di SD pada tahun {activeTP}.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => { setSelectedClass('BELUM_MASUK_SD'); setCurrentPage(1); }}
+                    className={cn(
+                      "px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer shadow-xs",
+                      selectedClass === 'BELUM_MASUK_SD'
+                        ? "bg-amber-600 text-white"
+                        : "bg-white dark:bg-slate-800 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-700 hover:bg-amber-100"
+                    )}
+                  >
+                    Filter Belum Masuk SD ({totalBelumMasukSD})
+                  </button>
+                  {selectedClass === 'BELUM_MASUK_SD' && (
+                    <button
+                      type="button"
+                      onClick={() => { setSelectedClass('ALL'); setCurrentPage(1); }}
+                      className="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-lg cursor-pointer"
+                    >
+                      Tampilkan Semua
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
 
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
@@ -1108,10 +1202,11 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
                       title="Klik untuk mengurutkan berdasarkan rombel"
                     >
                       <div className="flex items-center gap-1">
-                        <span>Rombel Sekarang</span>
+                        <span>Rombel (TP {activeTP})</span>
                         <ArrowUpDown className={cn("w-3 h-3", sortBy === 'kelas' ? "text-blue-600 dark:text-blue-400" : "text-slate-400 opacity-60")} />
                       </div>
                     </th>
+                    <th className="py-3 px-3 text-center">Status Siswa</th>
                     <th 
                       onClick={() => {
                         if (sortBy === 'tanggal') {
@@ -1136,7 +1231,7 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {paginatedStudents.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="text-center py-12 text-slate-500">
+                      <td colSpan={9} className="text-center py-12 text-slate-500">
                         <UserCheck className="w-10 h-10 mx-auto text-slate-300 dark:text-slate-600 mb-2" />
                         <p className="font-bold text-sm">Tidak ada siswa aktif ditemukan.</p>
                         <p className="text-xs text-slate-400 mt-1">Coba sesuaikan kata kunci pencarian atau filter rombel/gender.</p>
@@ -1145,10 +1240,16 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
                   ) : (
                     paginatedStudents.map((s, index) => {
                       const rowNum = (currentPage - 1) * itemsPerPage + index + 1;
+                      const isBelumMasuk = s.status === 'Belum Masuk SD';
                       return (
                         <tr 
                           key={s.id} 
-                          className="hover:bg-blue-50/50 dark:hover:bg-slate-800/50 transition-colors group"
+                          className={cn(
+                            "transition-colors group",
+                            isBelumMasuk 
+                              ? "bg-amber-50/40 dark:bg-amber-950/20 hover:bg-amber-100/50 dark:hover:bg-amber-900/30" 
+                              : "hover:bg-blue-50/50 dark:hover:bg-slate-800/50"
+                          )}
                         >
                           <td className="py-3 px-3 text-center font-mono text-slate-500 font-bold">
                             {rowNum}
@@ -1157,7 +1258,12 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
                             <div className="flex items-center gap-3">
                               <div 
                                 onClick={() => onSelectDetail(s.id)}
-                                className="w-9 h-9 rounded-xl bg-blue-100 dark:bg-blue-950/80 text-[#003399] dark:text-blue-300 font-bold flex items-center justify-center shrink-0 overflow-hidden border border-blue-200 dark:border-blue-900 cursor-pointer shadow-2xs"
+                                className={cn(
+                                  "w-9 h-9 rounded-xl font-bold flex items-center justify-center shrink-0 overflow-hidden border cursor-pointer shadow-2xs",
+                                  isBelumMasuk
+                                    ? "bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-800"
+                                    : "bg-blue-100 dark:bg-blue-950/80 text-[#003399] dark:text-blue-300 border-blue-200 dark:border-blue-900"
+                                )}
                                 title="Lihat profil detail"
                               >
                                 {s.fotoUrl ? (
@@ -1170,7 +1276,12 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => onSelectDetail(s.id)}
-                                  className="font-bold text-slate-900 dark:text-slate-100 hover:text-[#003399] dark:hover:text-blue-400 text-left cursor-pointer transition-colors"
+                                  className={cn(
+                                    "font-bold text-left cursor-pointer transition-colors",
+                                    isBelumMasuk
+                                      ? "text-amber-950 dark:text-amber-100 hover:text-amber-600"
+                                      : "text-slate-900 dark:text-slate-100 hover:text-[#003399] dark:hover:text-blue-400"
+                                  )}
                                 >
                                   {s.namaLengkap}
                                 </button>
@@ -1197,9 +1308,34 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
                             </span>
                           </td>
                           <td className="py-3 px-3">
-                            <span className="font-bold text-blue-800 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 px-2 py-1 rounded-lg border border-blue-200/60 dark:border-blue-900/60">
-                              {s.kelasSekarang}
-                            </span>
+                            {isBelumMasuk ? (
+                              <span className="font-extrabold text-amber-800 dark:text-amber-300 bg-amber-100 dark:bg-amber-950/80 px-2 py-0.5 rounded border border-amber-300 dark:border-amber-700 text-[11px] inline-flex items-center gap-1">
+                                <span>Belum Masuk SD</span>
+                              </span>
+                            ) : (
+                              <span className="font-bold text-blue-800 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 px-2 py-1 rounded-lg border border-blue-200/60 dark:border-blue-900/60">
+                                {s.kelasSekarang}
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3 px-3 text-center">
+                            {isBelumMasuk ? (
+                              <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200 border border-amber-300 dark:border-amber-700 whitespace-nowrap shadow-2xs">
+                                Belum Masuk SD
+                              </span>
+                            ) : s.status === 'Mutasi Keluar' ? (
+                              <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border border-rose-300 dark:border-rose-800 whitespace-nowrap">
+                                Mutasi Keluar
+                              </span>
+                            ) : s.status === 'Lulus' ? (
+                              <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300 border border-blue-300 dark:border-blue-800 whitespace-nowrap">
+                                Lulus
+                              </span>
+                            ) : (
+                              <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 whitespace-nowrap">
+                                Aktif
+                              </span>
+                            )}
                           </td>
                           <td className="py-3 px-3">
                             <span className="font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded">
@@ -2652,6 +2788,23 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
         <ImportRombelModal
           isOpen={isImportRombelModalOpen}
           onClose={() => setIsImportRombelModalOpen(false)}
+        />
+      )}
+
+      {/* Modal Kelola Pilihan Rombel */}
+      {isManageClassesOpen && (
+        <ManageClassesModal
+          isOpen={isManageClassesOpen}
+          onClose={() => setIsManageClassesOpen(false)}
+        />
+      )}
+
+      {/* Modal Kelola Tahun Pelajaran */}
+      {isEditTPModalOpen && (
+        <EditTahunPelajaranModal
+          isOpen={isEditTPModalOpen}
+          onClose={() => setIsEditTPModalOpen(false)}
+          initialSelectedTP={activeTP}
         />
       )}
     </div>

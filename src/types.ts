@@ -5,7 +5,7 @@
 
 export type Gender = 'L' | 'P';
 export type Religion = 'Islam' | 'Kristen Protestan' | 'Katolik' | 'Hindu' | 'Buddha' | 'Konghucu' | 'Lainnya';
-export type StudentStatus = 'Aktif' | 'Lulus' | 'Mutasi Keluar' | 'Drop Out' | 'Meninggal';
+export type StudentStatus = 'Aktif' | 'Lulus' | 'Mutasi Keluar' | 'Drop Out' | 'Meninggal' | 'Belum Masuk SD';
 export type UserRole = 'admin' | 'user' | 'umum';
 
 export interface ParentInfo {
@@ -150,6 +150,7 @@ export interface Student {
   tanggalDiterima: string;
   diterimaDiKelas: string;
   kelasSekarang: string;
+  tahunPelajaranKelasSekarang?: string; // Tahun Pelajaran acuan kelasSekarang (default: "2025/2026")
   status: StudentStatus;
   tahunMasuk: string;
   fotoUrl?: string;
