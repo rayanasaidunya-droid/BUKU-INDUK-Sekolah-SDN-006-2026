@@ -34,7 +34,11 @@ import {
   ArrowUpDown,
   Upload,
   ArrowRightLeft,
-  Layers
+  Layers,
+  Lock,
+  Unlock,
+  ShieldCheck,
+  Undo2
 } from 'lucide-react';
 import { useSchool, sanitizeDiterimaDiKelas } from '../../context/SchoolContext';
 import { Student, Gender, MutationRecord } from '../../types';
@@ -44,6 +48,7 @@ import { downloadRombelTemplate } from '../../utils/excelHelper';
 import { ImportRombelModal } from '../modals/ImportRombelModal';
 import { ManageClassesModal } from '../modals/ManageClassesModal';
 import { EditTahunPelajaranModal } from '../modals/EditTahunPelajaranModal';
+import { SaveLockRombelModal } from '../modals/SaveLockRombelModal';
 import { 
   projectStudentsForAcademicYear, 
   ProjectedStudent,
@@ -96,7 +101,9 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
     addStudent, 
     processMutation, 
     logActivity,
-    exportStudentsCSV 
+    exportStudentsCSV,
+    lockAcademicYearRombel,
+    unlockAcademicYearRombel 
   } = useSchool();
 
   // Active sub-tab state
@@ -116,6 +123,17 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
   const activeSemester = schoolProfile.semesterAktif || 'Ganjil';
   const [isEditTPModalOpen, setIsEditTPModalOpen] = useState(false);
 
+  // Lock Rombel & Simpan Rombel State
+  const activeTPLockInfo = schoolProfile.rombelLocks?.[activeTP];
+  const isCurrentTPLocked = Boolean(activeTPLockInfo?.isLocked);
+  const [isSaveLockModalOpen, setIsSaveLockModalOpen] = useState(false);
+  const [draftRombelEdits, setDraftRombelEdits] = useState<Record<string, string>>({});
+  const [isInlineRombelEditMode, setIsInlineRombelEditMode] = useState(false);
+  const [saveSuccessNotification, setSaveSuccessNotification] = useState<string | null>(null);
+
+  const draftEditsCount = Object.keys(draftRombelEdits).length;
+  const hasDraftEdits = draftEditsCount > 0;
+
   // Registered Academic Years list
   const tpList = useMemo(() => {
     const fromProfile = schoolProfile.daftarTahunPelajaran || [];
@@ -125,6 +143,8 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
 
   const handleSelectAcademicYear = (newTP: string) => {
     updateSchoolProfile({ tahunPelajaranAktif: newTP });
+    setDraftRombelEdits({});
+    setIsInlineRombelEditMode(false);
     logActivity(
       'PENGATURAN',
       `Mengganti Tahun Pelajaran Aktif ke: TP ${newTP}. Data rombel siswa otomatis disesuaikan.`
@@ -134,9 +154,58 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
 
   // Proyeksi Otomatis Siswa untuk Tahun Pelajaran Aktif (activeTP)
   // Saat ganti TP: data rombel naik/turun otomatis, siswa kelas 1 di tahun sebelumnya tertulis "Belum Masuk SD"
+  // Serta menggabungkan draft edits jika pengguna sedang mengedit rombel
   const projectedStudents = useMemo(() => {
-    return projectStudentsForAcademicYear(students, activeTP, '2025/2026');
-  }, [students, activeTP]);
+    const projected = projectStudentsForAcademicYear(students, activeTP, '2025/2026');
+    if (Object.keys(draftRombelEdits).length === 0) return projected;
+    return projected.map(s => {
+      const draftClass = draftRombelEdits[s.id];
+      if (draftClass) {
+        return {
+          ...s,
+          kelasSekarang: draftClass,
+          projectedRombel: draftClass,
+          projectedTingkat: getTingkatKelasNumber(draftClass),
+          isBelumMasukSD: draftClass === 'Belum Masuk SD',
+          status: draftClass === 'Belum Masuk SD' ? ('Belum Masuk SD' as const) : s.status,
+        };
+      }
+      return s;
+    });
+  }, [students, activeTP, draftRombelEdits]);
+
+  const handleConfirmSaveAndLock = (notes?: string) => {
+    const studentUpdates = projectedStudents.map(s => ({
+      id: s.id,
+      kelasSekarang: draftRombelEdits[s.id] || s.kelasSekarang,
+      status: s.status,
+      tahunPelajaranKelasSekarang: activeTP,
+    }));
+
+    lockAcademicYearRombel(activeTP, studentUpdates, notes);
+    setDraftRombelEdits({});
+    setIsInlineRombelEditMode(false);
+    setSaveSuccessNotification(
+      `Hasil edit dan penataan rombel siswa untuk Tahun Pelajaran ${activeTP} (${studentUpdates.length} siswa) berhasil disimpan dan dikunci ke Buku Induk!`
+    );
+    setTimeout(() => {
+      setSaveSuccessNotification(null);
+    }, 6000);
+  };
+
+  const handleUnlockRombel = () => {
+    if (window.confirm(`Buka kunci rombel untuk Tahun Pelajaran ${activeTP}? Anda dapat mengedit dan mengubah kembali rombel siswa.`)) {
+      unlockAcademicYearRombel(activeTP);
+      setSaveSuccessNotification(`Kunci rombel untuk Tahun Pelajaran ${activeTP} telah dibuka. Anda dapat melakukan perubahan rombel.`);
+      setTimeout(() => {
+        setSaveSuccessNotification(null);
+      }, 5000);
+    }
+  };
+
+  const handleResetDraftEdits = () => {
+    setDraftRombelEdits({});
+  };
 
   // Exclusively Active Students in Grade 1 to 6 on activeTP
   const activeStudents = useMemo(() => {
@@ -324,6 +393,7 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
     updateStudent(selectedStudentForEdit.id, {
       ...editFormData,
       diterimaDiKelas: cleanedDiterima,
+      tahunPelajaranKelasSekarang: activeTP,
     });
     logActivity('EDIT', `Memperbarui data & riwayat masuk siswa aktif: ${selectedStudentForEdit.namaLengkap} (${selectedStudentForEdit.noInduk})`);
     setEditSaveSuccess(true);
@@ -778,6 +848,52 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
               )}
             </div>
 
+            {/* Menu "Simpan" / Pengunci Rombel di Tahun Ajaran Aktif */}
+            {currentRole !== 'umum' && (
+              isCurrentTPLocked ? (
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-500/90 text-white rounded-xl border border-emerald-300/40 shadow-md">
+                  <ShieldCheck className="w-4 h-4 text-emerald-200 shrink-0" />
+                  <div className="leading-tight">
+                    <div className="flex items-center gap-1 font-black text-[11px] text-white">
+                      <Lock className="w-3 h-3 text-amber-300" />
+                      <span>Rombel Terkunci</span>
+                    </div>
+                    <span className="text-[9.5px] text-emerald-100 font-mono">
+                      TP {activeTP}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleUnlockRombel}
+                    className="ml-1 px-2 py-0.5 bg-white/20 hover:bg-white/30 text-white rounded-lg text-[10px] font-extrabold transition-all cursor-pointer shadow-xs"
+                    title="Buka kunci untuk mengedit rombel siswa kembali"
+                  >
+                    Buka Kunci
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setIsSaveLockModalOpen(true)}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black transition-all shadow-md cursor-pointer hover:shadow-lg active:scale-98",
+                    hasDraftEdits
+                      ? "bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-400 text-slate-950 ring-2 ring-white/60 animate-pulse"
+                      : "bg-emerald-400 hover:bg-emerald-300 text-slate-950"
+                  )}
+                  title="Simpan & kunci hasil rombel siswa untuk Tahun Pelajaran aktif ini ke Buku Induk"
+                >
+                  <Save className="w-4 h-4 text-slate-950" />
+                  <span>Simpan Rombel</span>
+                  {hasDraftEdits && (
+                    <span className="px-1.5 py-0.2 rounded-full bg-slate-950 text-amber-300 text-[10px] font-black">
+                      {draftEditsCount}
+                    </span>
+                  )}
+                </button>
+              )
+            )}
+
             {/* Impor Rombel Excel Button */}
             {currentRole !== 'umum' && (
               <button
@@ -1093,14 +1209,138 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
 
           {/* Table of Active Students */}
           <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-            <div className="px-5 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/70 dark:bg-slate-800/40">
-              <span className="text-xs font-extrabold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-2">
-                <Users className="w-4 h-4 text-[#003399] dark:text-blue-400" />
-                <span>Daftar Siswa Terdaftar: {filteredActiveStudents.length} Peserta Didik ({itemsPerPage} nomer per halaman)</span>
-              </span>
-              <span className="text-xs text-slate-500 font-mono">
-                Halaman {currentPage} dari {totalPages}
-              </span>
+            {/* Success Notification Banner */}
+            {saveSuccessNotification && (
+              <div className="mx-5 my-3 p-3.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 rounded-xl text-xs text-emerald-900 dark:text-emerald-100 flex items-center justify-between gap-3 shadow-xs animate-fade-in">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <span className="font-bold">{saveSuccessNotification}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSaveSuccessNotification(null)}
+                  className="text-xs font-bold text-emerald-700 dark:text-emerald-300 hover:underline cursor-pointer"
+                >
+                  Tutup
+                </button>
+              </div>
+            )}
+
+            {/* Draft Edits Pending Alert Banner */}
+            {hasDraftEdits && (
+              <div className="mx-5 my-3 p-3.5 bg-gradient-to-r from-amber-50 to-yellow-50 dark:from-amber-950/40 dark:to-yellow-950/30 border border-amber-300 dark:border-amber-700 rounded-xl text-xs text-amber-950 dark:text-amber-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm animate-fade-in">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-xs font-black">
+                    <Save className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <p className="font-extrabold text-amber-950 dark:text-amber-100">
+                      Terdapat {draftEditsCount} perubahan rombel siswa yang belum disimpan!
+                    </p>
+                    <p className="text-[11px] text-amber-800 dark:text-amber-300 mt-0.5">
+                      Klik menu <strong>"Simpan & Kunci Rombel"</strong> untuk mengunci hasil edit kelas siswa di Tahun Pelajaran {activeTP}.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleResetDraftEdits}
+                    className="px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1"
+                  >
+                    <Undo2 className="w-3.5 h-3.5" />
+                    <span>Batal</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsSaveLockModalOpen(true)}
+                    className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-black shadow-md transition-all cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                    <span>Simpan & Kunci ({draftEditsCount})</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="px-5 py-3 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-slate-50/70 dark:bg-slate-800/40">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-extrabold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                  <Users className="w-4 h-4 text-[#003399] dark:text-blue-400" />
+                  <span>Daftar Siswa Terdaftar: {filteredActiveStudents.length} Peserta Didik ({itemsPerPage} nomer per halaman)</span>
+                </span>
+
+                {/* Lock status pill badge */}
+                {isCurrentTPLocked ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-800 shadow-2xs">
+                    <Lock className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                    <span>Terkunci TP {activeTP}</span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-100 text-blue-900 dark:bg-blue-950 dark:text-blue-200 border border-blue-200 dark:border-blue-800">
+                    <Unlock className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                    <span>Mode Terbuka</span>
+                  </span>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {currentRole !== 'umum' && !isCurrentTPLocked && (
+                  <button
+                    type="button"
+                    onClick={() => setIsInlineRombelEditMode(prev => !prev)}
+                    className={cn(
+                      "px-2.5 py-1 text-xs font-bold rounded-lg border transition-all cursor-pointer flex items-center gap-1.5",
+                      isInlineRombelEditMode
+                        ? "bg-amber-500 text-slate-950 border-amber-600 font-black shadow-xs"
+                        : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700 hover:bg-slate-100"
+                    )}
+                    title="Ubah rombel siswa langsung di baris tabel"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span>{isInlineRombelEditMode ? 'Selesai Edit Rombel' : 'Edit Rombel Langsung'}</span>
+                  </button>
+                )}
+
+                {currentRole !== 'umum' && (
+                  isCurrentTPLocked ? (
+                    <button
+                      type="button"
+                      onClick={handleUnlockRombel}
+                      className="px-2.5 py-1 text-xs font-bold rounded-lg bg-emerald-100 dark:bg-emerald-950 text-emerald-900 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700 hover:bg-emerald-200 cursor-pointer flex items-center gap-1"
+                      title="Buka kunci rombel untuk mengubah rombel siswa"
+                    >
+                      <Unlock className="w-3 h-3" />
+                      <span>Buka Kunci</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setIsSaveLockModalOpen(true)}
+                      className={cn(
+                        "px-3 py-1 text-xs font-black rounded-lg transition-all cursor-pointer flex items-center gap-1.5 shadow-xs",
+                        hasDraftEdits
+                          ? "bg-emerald-600 hover:bg-emerald-500 text-white animate-pulse"
+                          : "bg-[#003399] hover:bg-blue-800 text-white"
+                      )}
+                      title="Simpan dan kunci hasil rombel siswa untuk Tahun Pelajaran aktif ini"
+                    >
+                      <Save className="w-3.5 h-3.5" />
+                      <span>Simpan Rombel</span>
+                      {hasDraftEdits && (
+                        <span className="px-1.5 py-0.2 rounded-full bg-amber-400 text-slate-950 text-[9.5px]">
+                          {draftEditsCount}
+                        </span>
+                      )}
+                    </button>
+                  )
+                )}
+
+                <span className="text-xs text-slate-500 font-mono ml-1">
+                  Halaman {currentPage} dari {totalPages}
+                </span>
+              </div>
             </div>
 
             {/* Informative Banner when students have 'Belum Masuk SD' in this school year */}
@@ -1312,10 +1552,53 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
                               <span className="font-extrabold text-amber-800 dark:text-amber-300 bg-amber-100 dark:bg-amber-950/80 px-2 py-0.5 rounded border border-amber-300 dark:border-amber-700 text-[11px] inline-flex items-center gap-1">
                                 <span>Belum Masuk SD</span>
                               </span>
+                            ) : isInlineRombelEditMode && currentRole !== 'umum' && !isCurrentTPLocked ? (
+                              <div className="flex items-center gap-1.5">
+                                <select
+                                  value={draftRombelEdits[s.id] || s.kelasSekarang}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setDraftRombelEdits(prev => ({
+                                      ...prev,
+                                      [s.id]: val,
+                                    }));
+                                  }}
+                                  className={cn(
+                                    "px-2 py-1 text-xs font-bold rounded-lg border cursor-pointer focus:ring-2 focus:ring-blue-500 focus:outline-hidden",
+                                    draftRombelEdits[s.id] && draftRombelEdits[s.id] !== s.kelasSekarang
+                                      ? "bg-amber-50 dark:bg-amber-950/60 border-amber-400 text-amber-900 dark:text-amber-200"
+                                      : "bg-white dark:bg-slate-800 border-blue-200 dark:border-blue-800 text-slate-800 dark:text-slate-200"
+                                  )}
+                                >
+                                  {availableClasses.map(cls => (
+                                    <option key={cls} value={cls}>{cls}</option>
+                                  ))}
+                                </select>
+                                {draftRombelEdits[s.id] && draftRombelEdits[s.id] !== s.kelasSekarang && (
+                                  <span className="text-[9.5px] font-black px-1.5 py-0.5 rounded bg-amber-400 text-slate-950 whitespace-nowrap shadow-2xs">
+                                    Diedit
+                                  </span>
+                                )}
+                              </div>
                             ) : (
-                              <span className="font-bold text-blue-800 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 px-2 py-1 rounded-lg border border-blue-200/60 dark:border-blue-900/60">
-                                {s.kelasSekarang}
-                              </span>
+                              <div className="flex items-center gap-1.5">
+                                <span className={cn(
+                                  "font-bold px-2 py-1 rounded-lg border transition-all",
+                                  draftRombelEdits[s.id] && draftRombelEdits[s.id] !== s.kelasSekarang
+                                    ? "text-amber-900 dark:text-amber-200 bg-amber-100/90 dark:bg-amber-950/80 border-amber-300 dark:border-amber-700 shadow-2xs"
+                                    : "text-blue-800 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 border-blue-200/60 dark:border-blue-900/60"
+                                )}>
+                                  {draftRombelEdits[s.id] || s.kelasSekarang}
+                                </span>
+                                {isCurrentTPLocked && (
+                                  <Lock className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0" title={`Rombel dikunci pada TP ${activeTP}`} />
+                                )}
+                                {draftRombelEdits[s.id] && draftRombelEdits[s.id] !== s.kelasSekarang && (
+                                  <span className="text-[9.5px] font-black px-1.5 py-0.5 rounded bg-amber-400 text-slate-950 whitespace-nowrap shadow-2xs">
+                                    Diedit
+                                  </span>
+                                )}
+                              </div>
                             )}
                           </td>
                           <td className="py-3 px-3 text-center">
@@ -2437,6 +2720,24 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
                       : 'Tampilkan Semua Rombel'}
                   </span>
                 </button>
+                {currentRole !== 'umum' && (
+                  isCurrentTPLocked ? (
+                    <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700 rounded-xl text-xs font-bold">
+                      <Lock className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                      <span>Rombel TP {activeTP} Terkunci</span>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setIsSaveLockModalOpen(true)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+                      title="Simpan & kunci hasil rombel siswa untuk Tahun Pelajaran aktif ini ke Buku Induk"
+                    >
+                      <Save className="w-3.5 h-3.5" />
+                      <span>Simpan Rombel</span>
+                    </button>
+                  )
+                )}
                 <button
                   type="button"
                   onClick={handlePrint}
@@ -2805,6 +3106,23 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
           isOpen={isEditTPModalOpen}
           onClose={() => setIsEditTPModalOpen(false)}
           initialSelectedTP={activeTP}
+        />
+      )}
+
+      {/* Modal Simpan & Kunci Rombel */}
+      {isSaveLockModalOpen && (
+        <SaveLockRombelModal
+          isOpen={isSaveLockModalOpen}
+          onClose={() => setIsSaveLockModalOpen(false)}
+          activeTP={activeTP}
+          totalActive={totalActive}
+          totalBelumMasukSD={totalBelumMasukSD}
+          rombelStats={rombelStats}
+          draftEdits={draftRombelEdits}
+          projectedStudents={projectedStudents}
+          onConfirmSaveAndLock={handleConfirmSaveAndLock}
+          isAlreadyLocked={isCurrentTPLocked}
+          lockInfo={activeTPLockInfo}
         />
       )}
     </div>

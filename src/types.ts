@@ -222,6 +222,15 @@ export interface SchoolProfile {
   semesterAktif?: 'Ganjil' | 'Genap' | '1' | '2';
   daftarTahunPelajaran?: string[];
   daftarKelas?: string[];
+  rombelLocks?: Record<string, RombelLockInfo>;
+}
+
+export interface RombelLockInfo {
+  isLocked: boolean;
+  lockedAt: string;
+  lockedBy: string;
+  totalStudents: number;
+  catatan?: string;
 }
 
 export interface ClassRankItem {

@@ -315,6 +315,17 @@ interface SchoolContextType {
   importStudentsBulk: (importedList: Partial<Student>[], duplicateStrategy: 'skip' | 'update' | 'append') => { added: number; updated: number; skipped: number };
   resetDatabase: () => void;
   resetToInitialData: () => void;
+  lockAcademicYearRombel: (
+    tahunPelajaran: string,
+    studentUpdates?: Array<{
+      id: string;
+      kelasSekarang: string;
+      status: StudentStatus;
+      tahunPelajaranKelasSekarang?: string;
+    }>,
+    catatan?: string
+  ) => void;
+  unlockAcademicYearRombel: (tahunPelajaran: string) => void;
 
   isSqlConnected: boolean;
   syncToSqlDatabase: () => Promise<{ success: boolean; message: string }>;
@@ -1081,6 +1092,94 @@ export const SchoolProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return updates.length;
   };
 
+  const lockAcademicYearRombel = (
+    tahunPelajaran: string,
+    studentUpdates?: Array<{
+      id: string;
+      kelasSekarang: string;
+      status: StudentStatus;
+      tahunPelajaranKelasSekarang?: string;
+    }>,
+    catatan?: string
+  ) => {
+    const actor = getActiveUserDisplayName();
+    const now = new Date().toISOString();
+
+    // 1. Commit student records if updates provided
+    if (studentUpdates && studentUpdates.length > 0) {
+      const updateMap = new Map<string, { kelasSekarang: string; status: StudentStatus }>();
+      studentUpdates.forEach((u) => updateMap.set(u.id, { kelasSekarang: u.kelasSekarang, status: u.status }));
+
+      setStudents((prev) =>
+        prev.map((st) => {
+          const u = updateMap.get(st.id);
+          if (u) {
+            const updated: Student = {
+              ...st,
+              kelasSekarang: u.kelasSekarang,
+              status: u.status,
+              tahunPelajaranKelasSekarang: tahunPelajaran,
+              terakhirDiubahOleh: actor,
+              updatedAt: now,
+            };
+            saveStudentToSql(updated).catch((err) => console.warn('SQL background lock rombel student error:', err));
+            return updated;
+          }
+          return st;
+        })
+      );
+    }
+
+    // 2. Commit lock to schoolProfile
+    setSchoolProfile((prev) => {
+      const existingLocks = prev.rombelLocks || {};
+      const updated: SchoolProfile = {
+        ...prev,
+        tahunPelajaranAktif: tahunPelajaran,
+        rombelLocks: {
+          ...existingLocks,
+          [tahunPelajaran]: {
+            isLocked: true,
+            lockedAt: now,
+            lockedBy: actor,
+            totalStudents: studentUpdates ? studentUpdates.length : 0,
+            catatan: catatan || `Rombel Tahun Pelajaran ${tahunPelajaran} dikunci dan disimpan resmi.`,
+          },
+        },
+      };
+      saveSchoolProfileToSql(updated).catch((err) => console.warn('SQL background save profile lock error:', err));
+      return updated;
+    });
+
+    logActivity(
+      'PENGATURAN',
+      `Menyimpan dan mengunci data rombel siswa (${studentUpdates?.length || 0} siswa) untuk Tahun Pelajaran ${tahunPelajaran}`
+    );
+  };
+
+  const unlockAcademicYearRombel = (tahunPelajaran: string) => {
+    setSchoolProfile((prev) => {
+      const existingLocks = { ...(prev.rombelLocks || {}) };
+      if (existingLocks[tahunPelajaran]) {
+        existingLocks[tahunPelajaran] = {
+          ...existingLocks[tahunPelajaran],
+          isLocked: false,
+        };
+      }
+      const updated: SchoolProfile = {
+        ...prev,
+        rombelLocks: existingLocks,
+      };
+      saveSchoolProfileToSql(updated).catch((err) => console.warn('SQL background save profile unlock error:', err));
+      return updated;
+    });
+
+    logActivity(
+      'PENGATURAN',
+      `Membuka kunci hasil edit rombel siswa untuk Tahun Pelajaran ${tahunPelajaran} (Mode Edit Dibuka Kembali)`
+    );
+  };
+
   const deleteStudent = (id: string) => {
     const target = students.find(s => s.id === id);
     setStudents(prev => prev.filter(s => s.id !== id));
@@ -1811,6 +1910,8 @@ export const SchoolProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         addStudent,
         updateStudent,
         bulkUpdateStudentRombel,
+        lockAcademicYearRombel,
+        unlockAcademicYearRombel,
         deleteStudent,
         deleteStudentsBulk,
         deleteAllStudents,
