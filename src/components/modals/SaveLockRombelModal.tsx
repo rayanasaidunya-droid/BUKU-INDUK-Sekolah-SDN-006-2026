@@ -11,7 +11,7 @@ import {
   Layers, 
   FileText 
 } from 'lucide-react';
-import { Student, RombelLockInfo } from '../../types';
+import { Student, RombelLockInfo, StudentStatus } from '../../types';
 import { formatIndonesianDate } from '../../lib/utils';
 
 interface SaveLockRombelModalProps {
@@ -27,6 +27,7 @@ interface SaveLockRombelModalProps {
     jmlP: number;
   }>;
   draftEdits: Record<string, string>;
+  draftStatusEdits?: Record<string, StudentStatus>;
   projectedStudents: Array<Student & { isBelumMasukSD?: boolean }>;
   onConfirmSaveAndLock: (notes?: string) => void;
   isAlreadyLocked: boolean;
@@ -41,29 +42,36 @@ export const SaveLockRombelModal: React.FC<SaveLockRombelModalProps> = ({
   totalBelumMasukSD,
   rombelStats,
   draftEdits,
+  draftStatusEdits = {},
   projectedStudents,
   onConfirmSaveAndLock,
   isAlreadyLocked,
   lockInfo,
 }) => {
   const [catatan, setCatatan] = useState<string>(
-    lockInfo?.catatan || `Penetapan dan penguncian rombel siswa Tahun Pelajaran ${activeTP}.`
+    lockInfo?.catatan || `Penetapan dan penguncian rombel & status siswa Tahun Pelajaran ${activeTP}.`
   );
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   if (!isOpen) return null;
 
-  const editedStudentIds = Object.keys(draftEdits);
+  const editedStudentIds = Array.from(new Set([...Object.keys(draftEdits), ...Object.keys(draftStatusEdits)]));
   const hasEdits = editedStudentIds.length > 0;
 
   const editedList = editedStudentIds.map(id => {
     const student = projectedStudents.find(s => s.id === id);
+    const hasRombelEdit = Boolean(draftEdits[id] && draftEdits[id] !== student?.kelasSekarang);
+    const hasStatusEdit = Boolean(draftStatusEdits[id] && draftStatusEdits[id] !== student?.status);
     return {
       id,
       nama: student?.namaLengkap || 'Siswa',
       nis: student?.noInduk || '-',
-      rombelBaru: draftEdits[id],
+      rombelBaru: draftEdits[id] || student?.kelasSekarang || '-',
       rombelLama: student?.kelasSekarang || '-',
+      hasRombelEdit,
+      statusBaru: draftStatusEdits[id] || student?.status,
+      statusLama: student?.status,
+      hasStatusEdit,
     };
   });
 
@@ -200,24 +208,37 @@ export const SaveLockRombelModal: React.FC<SaveLockRombelModalProps> = ({
             <div className="p-3.5 bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800 rounded-2xl">
               <div className="flex items-center gap-2 text-xs font-black text-amber-900 dark:text-amber-200 mb-2">
                 <AlertTriangle className="w-4 h-4 text-amber-600" />
-                <span>Perubahan Rombel Baru Yang Akan Dikunci ({editedList.length} Siswa):</span>
+                <span>Perubahan Rombel & Status Siswa yang Akan Disimpan & Dikunci ({editedList.length} Siswa):</span>
               </div>
-              <div className="max-h-36 overflow-y-auto space-y-1.5 scrollbar-thin pr-1 text-xs">
+              <div className="max-h-40 overflow-y-auto space-y-1.5 scrollbar-thin pr-1 text-xs">
                 {editedList.map((item, idx) => (
                   <div 
                     key={item.id} 
-                    className="p-2 bg-white dark:bg-slate-900 rounded-xl border border-amber-200 dark:border-amber-900/60 flex items-center justify-between gap-2"
+                    className="p-2.5 bg-white dark:bg-slate-900 rounded-xl border border-amber-200 dark:border-amber-900/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2"
                   >
                     <div className="truncate">
                       <span className="font-bold text-slate-900 dark:text-slate-100">{idx + 1}. {item.nama}</span>
                       <span className="text-[10px] text-slate-400 ml-1.5 font-mono">NIS: {item.nis}</span>
                     </div>
-                    <div className="flex items-center gap-1.5 shrink-0 text-[11px] font-bold">
-                      <span className="text-slate-400 line-through">{item.rombelLama}</span>
-                      <span>→</span>
-                      <span className="text-emerald-600 dark:text-emerald-400 font-extrabold bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-300 dark:border-emerald-700">
-                        {item.rombelBaru}
-                      </span>
+                    <div className="flex flex-wrap items-center gap-2 shrink-0 text-[11px] font-bold">
+                      {item.hasRombelEdit && (
+                        <div className="flex items-center gap-1">
+                          <span className="text-slate-400 line-through text-[10px]">{item.rombelLama}</span>
+                          <span>→</span>
+                          <span className="text-emerald-700 dark:text-emerald-300 font-extrabold bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-300 dark:border-emerald-700">
+                            {item.rombelBaru}
+                          </span>
+                        </div>
+                      )}
+                      {item.hasStatusEdit && (
+                        <div className="flex items-center gap-1">
+                          <span className="text-slate-400 line-through text-[10px]">{item.statusLama}</span>
+                          <span>→</span>
+                          <span className="text-blue-700 dark:text-blue-300 font-extrabold bg-blue-50 dark:bg-blue-950/60 px-2 py-0.5 rounded border border-blue-300 dark:border-blue-700">
+                            {item.statusBaru}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}

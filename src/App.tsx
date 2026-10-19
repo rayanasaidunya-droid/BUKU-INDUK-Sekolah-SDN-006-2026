@@ -166,7 +166,9 @@ const MainAppContent: React.FC = () => {
   };
 
   const handleOpenEditModal = (student: Student, initialTab: 'pribadi' | 'alamat' | 'ortu' | 'kesehatan' | 'masuk' = 'pribadi') => {
-    setStudentToEdit(student);
+    // Cari data siswa resmi dari Buku Induk (students) agar perubahan status dan rombel sinkron di kedua menu
+    const canonicalStudent = students.find(s => s.id === student.id) || student;
+    setStudentToEdit(canonicalStudent);
     setStudentFormInitialTab(initialTab);
     setIsAddEditModalOpen(true);
     setIsDetailModalOpen(false);

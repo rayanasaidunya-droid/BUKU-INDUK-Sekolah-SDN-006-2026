@@ -181,23 +181,29 @@ export function projectStudentForAcademicYear(
   }
 
   // KONDISI 3: Siswa Tingkat 1 s/d 6 pada Tahun Pelajaran target
-  // Cek jika siswa memiliki riwayat mutasi keluar
-  let projectedStatus: StudentStatus = 'Aktif';
-  if (student.status === 'Mutasi Keluar' && student.mutasi?.tglMeninggalkan) {
-    const mutasiYear = getAcademicYearStart(getAcademicYearFromDate(student.mutasi.tglMeninggalkan));
-    if (targetYear >= mutasiYear) {
-      projectedStatus = 'Mutasi Keluar';
+  // Sinkronisasi status siswa persis dengan Buku Induk Siswa (Aktif, Lulus, Mutasi Keluar, Drop Out, Meninggal)
+  let projectedStatus: StudentStatus = student.status || 'Aktif';
+  if (student.status === 'Mutasi Keluar') {
+    if (student.mutasi?.tglMeninggalkan) {
+      const mutasiYear = getAcademicYearStart(getAcademicYearFromDate(student.mutasi.tglMeninggalkan));
+      if (targetYear >= mutasiYear) {
+        projectedStatus = 'Mutasi Keluar';
+      } else {
+        projectedStatus = 'Aktif';
+      }
     } else {
-      projectedStatus = 'Aktif';
+      projectedStatus = 'Mutasi Keluar';
     }
   } else if (student.status === 'Lulus') {
-    const lulusYear = student.sttb?.lulusTahun 
-      ? parseInt(student.sttb.lulusTahun, 10) 
-      : (admissionYear + (6 - admittedGrade) + 1);
-    if (targetYear >= lulusYear) {
-      projectedStatus = 'Lulus';
+    if (student.sttb?.lulusTahun) {
+      const lulusYear = parseInt(student.sttb.lulusTahun, 10);
+      if (targetYear >= lulusYear) {
+        projectedStatus = 'Lulus';
+      } else {
+        projectedStatus = 'Aktif';
+      }
     } else {
-      projectedStatus = 'Aktif';
+      projectedStatus = 'Lulus';
     }
   } else if (student.status === 'Drop Out' || student.status === 'Meninggal') {
     projectedStatus = student.status;
