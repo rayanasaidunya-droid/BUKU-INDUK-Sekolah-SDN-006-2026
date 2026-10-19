@@ -49,6 +49,8 @@ import { ImportRombelModal } from '../modals/ImportRombelModal';
 import { ManageClassesModal } from '../modals/ManageClassesModal';
 import { EditTahunPelajaranModal } from '../modals/EditTahunPelajaranModal';
 import { SaveLockRombelModal } from '../modals/SaveLockRombelModal';
+import { PrintActiveStudentsModal, PrintSettingsState } from '../modals/PrintActiveStudentsModal';
+import { ActiveStudentsPrintDocument } from '../common/ActiveStudentsPrintDocument';
 import { 
   projectStudentsForAcademicYear, 
   ProjectedStudent,
@@ -103,8 +105,52 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
     logActivity,
     exportStudentsCSV,
     lockAcademicYearRombel,
-    unlockAcademicYearRombel 
+    unlockAcademicYearRombel,
+    adminUsers 
   } = useSchool();
+
+  // Print Modal & Document Generation State
+  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+  const [printModalMode, setPrintModalMode] = useState<'daftar-siswa' | 'rekap-rombel'>('daftar-siswa');
+  const [currentPrintSettings, setCurrentPrintSettings] = useState<PrintSettingsState>({
+    scope: 'all',
+    selectedTingkat: '1',
+    selectedRombel: 'Kelas 1',
+    selectedStatus: 'ALL',
+    hideEmptyRombel: true,
+    includeTingkatSummary: true,
+    includeGenderStats: true,
+    groupingMode: 'per-rombel',
+    paperSize: 'A4',
+    orientation: 'portrait',
+    fontSize: 'sm',
+    showKopSurat: true,
+    customTitle: 'DAFTAR PESERTA DIDIK AKTIF',
+    customSubtitle: `SEMESTER ${schoolProfile.semesterAktif || 'Ganjil'} TAHUN PELAJARAN ${schoolProfile.tahunPelajaranAktif || '2025/2026'}`,
+    columns: {
+      no: true,
+      nis: true,
+      nisn: true,
+      namaLengkap: true,
+      jenisKelamin: true,
+      rombel: true,
+      tempatTanggalLahir: true,
+      namaOrangTua: false,
+      agama: false,
+      status: true,
+      kolomParaf: false,
+      kolomKeterangan: false,
+    },
+    showSignatures: true,
+    titimangsaKota: schoolProfile.kabupatenKota || schoolProfile.kecamatan || 'Kuantan Singingi',
+    titimangsaTanggal: formatIndonesianDate(new Date().toISOString().split('T')[0]),
+    namaKepalaSekolah: schoolProfile.namaKepalaSekolah || 'Kepala Sekolah',
+    nipKepalaSekolah: schoolProfile.nipKepalaSekolah || '-',
+    namaWaliKelas: 'Wali Kelas / Guru Kelas',
+    nipWaliKelas: '-',
+    showWaliKelasSignature: true,
+    showKepalaSekolahSignature: true,
+  });
 
   // Active sub-tab state
   const [subTab, setSubTab] = useState<ActiveStudentsSubTab>('daftar');
@@ -1241,12 +1287,26 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
                 </button>
               </div>
 
+              {/* Menu Cetak Dokumen Daftar Siswa Aktif */}
+              <button
+                type="button"
+                onClick={() => {
+                  setPrintModalMode('daftar-siswa');
+                  setIsPrintModalOpen(true);
+                }}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-white dark:bg-slate-800 hover:bg-blue-50 dark:hover:bg-blue-950/40 border-2 border-[#003399] dark:border-blue-500 text-[#003399] dark:text-blue-300 text-xs font-black rounded-xl shadow-xs transition-all cursor-pointer transform active:scale-95 ml-auto"
+                title="Buka menu & pengaturan cetak dokumen resmi daftar siswa aktif (kertas A4/F4, kop surat, kolom data, dan per rombel)"
+              >
+                <Printer className="w-4 h-4 text-[#003399] dark:text-blue-400" />
+                <span>Cetak Daftar Siswa</span>
+              </button>
+
               {/* Impor Rombel Excel Shortcut */}
               {currentRole !== 'umum' && (
                 <button
                   type="button"
                   onClick={() => setIsImportRombelModalOpen(true)}
-                  className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer ml-auto"
+                  className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
                   title="Impor berkas Excel (.xlsx) untuk merubah rombel siswa secara massal"
                 >
                   <Upload className="w-3.5 h-3.5" />
@@ -3130,8 +3190,12 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
                 )}
                 <button
                   type="button"
-                  onClick={handlePrint}
+                  onClick={() => {
+                    setPrintModalMode('rekap-rombel');
+                    setIsPrintModalOpen(true);
+                  }}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-[#003399] hover:bg-[#002266] text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+                  title="Buka pilihan pengaturan cetak rekapitulasi rombel (kertas A4/F4, kop surat, tanda tangan)"
                 >
                   <Printer className="w-3.5 h-3.5" />
                   <span>Cetak Rekap Rombel</span>
@@ -3549,6 +3613,44 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
           onConfirmSaveAndLock={handleConfirmSaveAndLock}
           isAlreadyLocked={isCurrentTPLocked}
           lockInfo={activeTPLockInfo}
+        />
+      )}
+
+      {/* Dokumen Tercetak Khusus Mode Print (@media print - Sesuai Kebutuhan & Pengaturan) */}
+      <ActiveStudentsPrintDocument
+        settings={currentPrintSettings}
+        schoolProfile={schoolProfile}
+        activeTP={activeTP}
+        activeSemester={activeSemester}
+        projectedStudents={projectedStudents}
+        rombelStats={rombelStats}
+        availableClasses={availableClasses}
+        adminUsers={adminUsers}
+        currentSelectedTingkat={selectedTingkat}
+        currentSelectedRombel={selectedRombel}
+        currentSelectedStatus={selectedStatus}
+        mode={printModalMode}
+      />
+
+      {/* Modal Pilihan Pengaturan Cetak (Daftar Siswa Aktif & Tabel Siswa per Rombel) */}
+      {isPrintModalOpen && (
+        <PrintActiveStudentsModal
+          isOpen={isPrintModalOpen}
+          onClose={() => setIsPrintModalOpen(false)}
+          mode={printModalMode}
+          activeTP={activeTP}
+          activeSemester={activeSemester}
+          schoolProfile={schoolProfile}
+          activeStudents={activeStudents}
+          projectedStudents={projectedStudents}
+          availableClasses={availableClasses}
+          rombelStats={rombelStats}
+          currentSelectedTingkat={selectedTingkat}
+          currentSelectedRombel={selectedRombel}
+          currentSelectedStatus={selectedStatus}
+          onApplySettingsToPrintContainer={(newSettings) => {
+            setCurrentPrintSettings(newSettings);
+          }}
         />
       )}
     </div>
