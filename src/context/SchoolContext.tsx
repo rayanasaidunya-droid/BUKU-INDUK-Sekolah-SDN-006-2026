@@ -278,6 +278,7 @@ interface SchoolContextType {
 
   // Roster Helpers
   getWaliKelasForClass: (kelas: string) => { nama: string; nip: string; id?: string };
+  updateWaliKelasForClass: (kelas: string, nama: string, nip?: string) => void;
   getKepalaSekolah: () => { nama: string; nip: string; id?: string };
 
   // Actions
@@ -845,11 +846,38 @@ export const SchoolProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       };
     }
 
+    // 0. Check schoolProfile.waliKelasMap first if explicitly assigned or edited
+    if (schoolProfile.waliKelasMap && schoolProfile.waliKelasMap[kelasStr]) {
+      const custom = schoolProfile.waliKelasMap[kelasStr];
+      if (custom && custom.nama) {
+        return {
+          nama: custom.nama,
+          nip: custom.nip || '-',
+        };
+      }
+    }
+
     // Extract grade digit
     const match = kelasStr.match(/\d+/);
     const gradeNum = match ? match[0] : '';
 
-    // 1. Check for teacher explicitly assigned to this class
+    if (gradeNum && schoolProfile.waliKelasMap) {
+      const standardKey = `Kelas ${gradeNum}`;
+      if (schoolProfile.waliKelasMap[standardKey]?.nama) {
+        return {
+          nama: schoolProfile.waliKelasMap[standardKey].nama,
+          nip: schoolProfile.waliKelasMap[standardKey].nip || '-',
+        };
+      }
+      if (schoolProfile.waliKelasMap[gradeNum]?.nama) {
+        return {
+          nama: schoolProfile.waliKelasMap[gradeNum].nama,
+          nip: schoolProfile.waliKelasMap[gradeNum].nip || '-',
+        };
+      }
+    }
+
+    // 1. Check for teacher explicitly assigned to this class in adminUsers
     const exactTeacher = adminUsers.find(u => {
       if (u.status !== 'Aktif') return false;
       if (u.kategoriTugas === 'wali_kelas' && u.tingkatKelas) {
@@ -890,6 +918,60 @@ export const SchoolProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       nama: 'Dewi Anggraini, S.Pd.SD',
       nip: '19901103 201502 2 009',
     };
+  };
+
+  const updateWaliKelasForClass = (kelas: string, nama: string, nip: string = '-') => {
+    const trimmedNama = nama.trim();
+    const trimmedNip = nip.trim() || '-';
+
+    // 1. Simpan ke SchoolProfile agar persisten & terbaca di seluruh laporan & cetak
+    setSchoolProfile(prev => {
+      const nextMap = {
+        ...(prev.waliKelasMap || {}),
+        [kelas]: { nama: trimmedNama, nip: trimmedNip }
+      };
+      const updated = {
+        ...prev,
+        waliKelasMap: nextMap
+      };
+      saveToStorage(STORAGE_KEYS.PROFILE, updated);
+      return updated;
+    });
+
+    // 2. Sinkronkan dengan adminUsers (dewan guru) jika ada yang cocok
+    const match = kelas.match(/\d+/);
+    const gradeNum = match ? match[0] : '';
+
+    setAdminUsers(prevUsers => {
+      let matched = false;
+      const updatedUsers = prevUsers.map(user => {
+        const matchesClass = user.tingkatKelas?.toLowerCase() === kelas.toLowerCase() ||
+                             (gradeNum && user.tingkatKelas?.includes(gradeNum)) ||
+                             (gradeNum && user.jabatan?.toLowerCase().includes(`wali kelas ${gradeNum}`));
+        const matchesName = user.nama.toLowerCase() === trimmedNama.toLowerCase();
+
+        if (matchesClass || matchesName) {
+          matched = true;
+          return {
+            ...user,
+            nama: trimmedNama,
+            nip: trimmedNip !== '-' ? trimmedNip : user.nip,
+            tingkatKelas: kelas,
+            kategoriTugas: 'wali_kelas' as const,
+            jabatan: `Guru / Wali Kelas ${kelas}`,
+          };
+        }
+        return user;
+      });
+
+      if (matched) {
+        saveToStorage(STORAGE_KEYS.ADMIN_USERS, updatedUsers);
+        return updatedUsers;
+      }
+      return prevUsers;
+    });
+
+    logActivity('EDIT', `Memperbarui nama wali kelas untuk ${kelas}: ${trimmedNama}`);
   };
 
   const getKepalaSekolah = (): { nama: string; nip: string; id?: string } => {
@@ -1906,6 +1988,7 @@ export const SchoolProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         securitySettings,
         updateSecuritySettings,
         getWaliKelasForClass,
+        updateWaliKelasForClass,
         getKepalaSekolah,
         addStudent,
         updateStudent,

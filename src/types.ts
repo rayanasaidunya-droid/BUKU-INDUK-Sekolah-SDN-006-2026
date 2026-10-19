@@ -223,6 +223,7 @@ export interface SchoolProfile {
   daftarTahunPelajaran?: string[];
   daftarKelas?: string[];
   rombelLocks?: Record<string, RombelLockInfo>;
+  waliKelasMap?: Record<string, { nama: string; nip?: string }>;
 }
 
 export interface RombelLockInfo {
