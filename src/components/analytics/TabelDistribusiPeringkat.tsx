@@ -152,7 +152,7 @@ export const TabelDistribusiPeringkat: React.FC<TabelDistribusiPeringkatProps> =
   return (
     <div className="space-y-4">
       {/* Section Header Card */}
-      <div className="no-print p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
+      <div className="no-print print:hidden p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div className="space-y-1">
             <div className="flex items-center gap-2">

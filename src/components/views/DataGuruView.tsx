@@ -582,8 +582,10 @@ export const DataGuruView: React.FC<DataGuruViewProps> = ({
 
   return (
     <div className="space-y-6 pb-16 animate-in fade-in duration-200">
-      {/* Header */}
-      <div className="no-print flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      {/* TAMPILAN INTERAKTIF LAYAR (DISEMBUNYIKAN SAAT CETAK AGAR HANYA DOKUMEN RESMI BER-KOP SURAT YANG TERCETAK) */}
+      <div className="space-y-6 no-print print:hidden">
+        {/* Header */}
+        <div className="no-print flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="flex items-start sm:items-center gap-3">
           <button
             onClick={() => (onBack ? onBack() : setActiveTab ? setActiveTab('dashboard') : null)}
@@ -2249,6 +2251,7 @@ export const DataGuruView: React.FC<DataGuruViewProps> = ({
           </div>
         </div>
       )}
+      </div>
 
       {/* ================= FORMAL PRINT DAFTAR PTK WITH KOP SURAT ================= */}
       <div className="hidden print:block max-w-[297mm] mx-auto bg-white text-slate-950 p-[10mm] font-serif text-[11px] leading-relaxed">

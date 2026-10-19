@@ -838,15 +838,18 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
     return tingkatStats.filter(ts => ts.total > 0);
   }, [tingkatStats, hideEmptyRombel]);
 
-  // Print function
-  const handlePrint = () => {
-    window.print();
+  // Print function - opens official document print dialog with Kop Surat & layout configurations
+  const handlePrint = (targetMode: 'daftar-siswa' | 'rekap-rombel' = subTab === 'tabel-rombel' ? 'rekap-rombel' : 'daftar-siswa') => {
+    setPrintModalMode(targetMode);
+    setIsPrintModalOpen(true);
   };
 
   return (
     <div className="space-y-6 pb-12">
-      {/* Top Banner Ribbon */}
-      <div className="bg-gradient-to-r from-[#003399] via-blue-800 to-indigo-900 rounded-2xl p-5 md:p-6 text-white shadow-xl relative overflow-hidden print:hidden">
+      {/* TAMPILAN INTERAKTIF LAYAR (DISEMBUNYIKAN PENUH SAAT CETAK AGAR HANYA DOKUMEN RESMI BER-KOP SURAT YANG TERCETAK) */}
+      <div className="space-y-6 no-print print:hidden">
+        {/* Top Banner Ribbon */}
+        <div className="bg-gradient-to-r from-[#003399] via-blue-800 to-indigo-900 rounded-2xl p-5 md:p-6 text-white shadow-xl relative overflow-hidden print:hidden">
         <div className="absolute right-0 top-0 translate-x-10 -translate-y-10 w-64 h-64 bg-white/10 rounded-full blur-2xl pointer-events-none" />
         
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -1056,12 +1059,12 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
               <span>Ekspor Excel</span>
             </button>
             <button
-              onClick={handlePrint}
+              onClick={() => handlePrint(subTab === 'tabel-rombel' ? 'rekap-rombel' : 'daftar-siswa')}
               className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-400 hover:bg-amber-300 text-slate-950 rounded-xl text-xs font-extrabold transition-all shadow-md cursor-pointer"
-              title="Cetak Halaman ini"
+              title="Buka menu & pengaturan cetak dokumen resmi (lengkap dengan Kop Surat, pilihan kertas A4/F4, kolom, dan tanda tangan)"
             >
               <Printer className="w-4 h-4" />
-              <span>Cetak Laporan</span>
+              <span>Cetak Dokumen</span>
             </button>
           </div>
         </div>
@@ -3572,6 +3575,7 @@ export const ActiveStudentsView: React.FC<ActiveStudentsViewProps> = ({
           </div>
         </div>
       )}
+      </div>
 
       {/* Modal Impor Perubahan Rombel Excel */}
       {isImportRombelModalOpen && (

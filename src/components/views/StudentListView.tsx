@@ -217,8 +217,10 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
 
   return (
     <div className="space-y-6 pb-12 animate-in fade-in duration-200">
-      {/* Page Header Bar */}
-      <div className="no-print flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      {/* TAMPILAN INTERAKTIF LAYAR (DISEMBUNYIKAN SAAT CETAK AGAR HANYA DOKUMEN RESMI BER-KOP SURAT YANG TERCETAK) */}
+      <div className="space-y-6 no-print print:hidden">
+        {/* Page Header Bar */}
+        <div className="no-print flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div className="flex items-start sm:items-center gap-3">
           <button
             onClick={() => (onBack ? onBack() : setActiveTab('dashboard'))}
@@ -891,6 +893,7 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
           </div>
         </div>
       )}
+      </div>
 
       {/* Import Excel / Spreadsheet Modal */}
       <ImportExcelModal
